@@ -142,20 +142,22 @@ app.get('/exotel/voicebot', async (req, res) => {
     { role: 'assistant', content: 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?' }
   ]);
   
-  // Exotel Voicebot - use Record instead of Gather for better compatibility
+  // Exotel Voicebot - simplified response for better compatibility
   const host = req.get('host');
   const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
   
+  // Simplified TwiML - remove potentially unsupported attributes
   const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say language="hi-IN" voice="woman">नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?</Say>
-  <Record maxLength="30" finishOnKey="#" transcriptionType="auto" transcriptionEnabled="true" playBeep="false" callbackUrl="${callbackUrl}" method="POST" />
+  <Say language="hi-IN">नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?</Say>
+  <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" callbackUrl="${callbackUrl}" />
 </Response>`;
   
   console.log('Sending TwiML response:', twimlResponse);
+  console.log('Response length:', twimlResponse.length);
   
-  res.set('Content-Type', 'application/xml');
-  res.send(twimlResponse);
+  res.set('Content-Type', 'application/xml; charset=utf-8');
+  res.status(200).send(twimlResponse);
 });
 
 app.post('/exotel/voicebot', async (req, res) => {
@@ -173,11 +175,11 @@ app.post('/exotel/voicebot', async (req, res) => {
     const host = req.get('host');
     const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
     
-    res.set('Content-Type', 'application/xml');
-    return res.send(`<?xml version="1.0" encoding="UTF-8"?>
+    res.set('Content-Type', 'application/xml; charset=utf-8');
+    return res.status(200).send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say language="hi-IN" voice="woman">क्षमा करें, मैं आपकी बात नहीं सुन पाया। कृपया दोबारा बोलें।</Say>
-  <Record maxLength="30" finishOnKey="#" transcriptionType="auto" transcriptionEnabled="true" playBeep="false" callbackUrl="${callbackUrl}" method="POST" />
+  <Say language="hi-IN">क्षमा करें, मैं आपकी बात नहीं सुन पाया। कृपया दोबारा बोलें।</Say>
+  <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" callbackUrl="${callbackUrl}" />
 </Response>`);
   }
 
@@ -192,10 +194,10 @@ app.post('/exotel/voicebot', async (req, res) => {
   const history = callSessions.get(callSid) || [];
   if (history.length >= 6) {
     callSessions.delete(callSid);
-    res.set('Content-Type', 'application/xml');
-    return res.send(`<?xml version="1.0" encoding="UTF-8"?>
+    res.set('Content-Type', 'application/xml; charset=utf-8');
+    return res.status(200).send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say language="hi-IN" voice="woman">धन्यवाद! आपका दिन शुभ हो।</Say>
+  <Say language="hi-IN">धन्यवाद! आपका दिन शुभ हो।</Say>
   <Hangup/>
 </Response>`);
   }
@@ -205,18 +207,18 @@ app.post('/exotel/voicebot', async (req, res) => {
     const host = req.get('host');
     const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
     
-    res.set('Content-Type', 'application/xml');
-    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+    res.set('Content-Type', 'application/xml; charset=utf-8');
+    res.status(200).send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say language="hi-IN" voice="woman">${reply}</Say>
-  <Record maxLength="30" finishOnKey="#" transcriptionType="auto" transcriptionEnabled="true" playBeep="false" callbackUrl="${callbackUrl}" method="POST" />
+  <Say language="hi-IN">${reply}</Say>
+  <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" callbackUrl="${callbackUrl}" />
 </Response>`);
   } catch (err) {
     console.error('Error in voicebot:', err);
-    res.set('Content-Type', 'application/xml');
-    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+    res.set('Content-Type', 'application/xml; charset=utf-8');
+    res.status(200).send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say language="hi-IN" voice="woman">क्षमा करें, कुछ समस्या आ गई है। कृपया बाद में पुनः प्रयास करें।</Say>
+  <Say language="hi-IN">क्षमा करें, कुछ समस्या आ गई है। कृपया बाद में पुनः प्रयास करें।</Say>
   <Hangup/>
 </Response>`);
   }
