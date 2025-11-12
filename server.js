@@ -21,30 +21,39 @@ app.get('/exotel/voicebot', (req, res) => {
 
   sessions.set(callSid, []); // Start session
 
+  // Build callback URL for transcription
+  const host = req.get('host');
+  const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say language="hi-IN" voice="Manvi">नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?</Say>
-  <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" />
+  <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" callbackUrl="${callbackUrl}" method="POST" />
 </Response>`;
 
   console.log('STEP 2: Sending XML → Greeting + Start recording');
-  console.log('XML Response:', xml);
+  console.log('Callback URL:', callbackUrl);
   res.set('Content-Type', 'application/xml; charset=utf-8').send(xml);
 });
 
 // POST: Transcription received → AI reply
 app.post('/exotel/voicebot', async (req, res) => {
-  const callSid = req.body.CallSid;
-  const text = req.body.Transcription || '';
+  const callSid = req.body.CallSid || req.query.callSid;
+  const text = req.body.Transcription || req.body.SpeechResult || '';
+  
+  console.log('POST body:', JSON.stringify(req.body, null, 2));
+  console.log('POST query:', JSON.stringify(req.query, null, 2));
 
   console.log('STEP 3: POST → CallSid:', callSid, 'Text:', text);
 
   if (!text.trim()) {
     console.log('No speech → Reprompt');
+    const host = req.get('host');
+    const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say language="hi-IN" voice="Manvi">क्षमा करें, मैं समझ नहीं पाया। कृपया दोबारा बोलें।</Say>
-  <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" />
+  <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" callbackUrl="${callbackUrl}" method="POST" />
 </Response>`;
     return res.set('Content-Type', 'application/xml; charset=utf-8').send(xml);
   }
@@ -68,10 +77,12 @@ app.post('/exotel/voicebot', async (req, res) => {
 
   console.log('STEP 4: AI Reply →', reply);
 
+  const host = req.get('host');
+  const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say language="hi-IN" voice="Manvi">${reply}</Say>
-  <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" />
+  <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" callbackUrl="${callbackUrl}" method="POST" />
 </Response>`;
 
   console.log('STEP 5: Bot speaks → Loop');
