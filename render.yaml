@@ -1,20 +1,12 @@
 services:
   - type: web
-    name: ai-calling-agent
+    name: hindi-voicebot
     env: node
     buildCommand: npm install
     startCommand: npm start
     envVars:
       - key: PORT
         value: 10000
-      - key: EXOTEL_SID
-        sync: false
-      - key: EXOTEL_TOKEN
-        sync: false
       - key: OPENAI_API_KEY
-        sync: false
-      - key: EXOTEL_FROM_NUMBER
-        sync: false
-      - key: TEST_RECIPIENT_NUMBER
         sync: false
 
