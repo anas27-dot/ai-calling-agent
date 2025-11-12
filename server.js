@@ -71,11 +71,15 @@ const handleExotelAnswer = async (req, res) => {
     { role: 'assistant', content: 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?' }
   ]);
 
+  // Force HTTPS for callback URL (Render uses HTTPS)
+  const host = req.get('host');
+  const callbackUrl = `https://${host}/exotel/recording?callSid=${callSid}`;
+  
   res.type('application/xml');
   res.send(`
 <Response>
   <Say language="hi-IN">नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?</Say>
-  <Record transcriptionType="auto" transcriptionEnabled="true" playBeep="false" callbackUrl="${req.protocol}://${req.get('host')}/exotel/recording?callSid=${callSid}" />
+  <Record transcriptionType="auto" transcriptionEnabled="true" playBeep="false" callbackUrl="${callbackUrl}" />
 </Response>
   `.trim());
 };
@@ -108,10 +112,14 @@ app.post('/exotel/recording', async (req, res) => {
 
   try {
     const reply = await getReply(sessionId, transcription);
+    // Force HTTPS for callback URL
+    const host = req.get('host');
+    const callbackUrl = `https://${host}/exotel/recording?callSid=${sessionId}`;
+    
     res.type('application/xml').send(`
 <Response>
   <Say language="hi-IN">${reply}</Say>
-  <Record transcriptionType="auto" transcriptionEnabled="true" playBeep="false" callbackUrl="${req.protocol}://${req.get('host')}/exotel/recording?callSid=${sessionId}" />
+  <Record transcriptionType="auto" transcriptionEnabled="true" playBeep="false" callbackUrl="${callbackUrl}" />
 </Response>
     `.trim());
   } catch (err) {
