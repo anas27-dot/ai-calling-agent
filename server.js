@@ -226,20 +226,28 @@ app.post('/exotel/voicebot', async (req, res) => {
 });
 
 // WSS Resolver Endpoint for Voicebot Applet (returns dynamic WSS URL)
-app.post('/resolve-wss', (req, res) => {
-  const callSid = req.body.CallSid || req.query.CallSid || `call-${Date.now()}`;
+// Handle both GET and POST (Exotel may use either)
+const handleWssResolver = (req, res) => {
+  const callSid = req.body.CallSid || req.query.CallSid || req.query.callSid || `call-${Date.now()}`;
   const host = req.get('host');
   // Use wss:// for Render (HTTPS automatically becomes WSS)
   const wssUrl = `wss://${host}/stream?callSid=${encodeURIComponent(callSid)}`;
   
   console.log('\n========== WSS RESOLVER REQUEST ==========');
+  console.log('Method:', req.method);
   console.log('CallSid:', callSid);
   console.log('WSS URL:', wssUrl);
-  console.log('Body:', JSON.stringify(req.body, null, 2));
+  console.log('Query Params:', JSON.stringify(req.query, null, 2));
+  if (req.method === 'POST') {
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+  }
   console.log('==========================================\n');
   
   res.json({ url: wssUrl });
-});
+};
+
+app.get('/resolve-wss', handleWssResolver);
+app.post('/resolve-wss', handleWssResolver);
 
 // Health Check
 app.get('/', (req, res) => {
