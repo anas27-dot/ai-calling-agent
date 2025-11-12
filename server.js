@@ -146,12 +146,16 @@ app.get('/exotel/voicebot', async (req, res) => {
   const host = req.get('host');
   const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
   
-  res.set('Content-Type', 'application/xml');
-  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+  const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say language="hi-IN" voice="woman">नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?</Say>
   <Record maxLength="30" finishOnKey="#" transcriptionType="auto" transcriptionEnabled="true" playBeep="false" callbackUrl="${callbackUrl}" method="POST" />
-</Response>`);
+</Response>`;
+  
+  console.log('Sending TwiML response:', twimlResponse);
+  
+  res.set('Content-Type', 'application/xml');
+  res.send(twimlResponse);
 });
 
 app.post('/exotel/voicebot', async (req, res) => {
