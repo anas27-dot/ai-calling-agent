@@ -50,22 +50,14 @@ const getReply = async (sessionId, userUtterance) => {
   return aiMessage;
 };
 
-// GET handler for testing/debugging (browser access)
-app.get('/exotel/answer', (req, res) => {
-  res.status(200).json({
-    message: 'This endpoint accepts POST requests only. Exotel will call this with POST method.',
-    endpoint: '/exotel/answer',
-    method: 'POST',
-    expected: 'TwiML XML response with <Response>, <Say>, and <Record> tags'
-  });
-});
-
-// Exotel answers calls by requesting this URL to get TwiML-ish instructions.
-app.post('/exotel/answer', async (req, res) => {
-  const callSid = req.body.CallSid || `call-${Date.now()}`;
+// Common handler function for both GET and POST requests
+const handleExotelAnswer = async (req, res) => {
+  // Exotel can send CallSid in body (POST) or query params (GET)
+  const callSid = req.body?.CallSid || req.query?.CallSid || `call-${Date.now()}`;
   
   // Log all incoming parameters including passthrough data
   console.log('=== Incoming Call ===');
+  console.log('Method:', req.method);
   console.log('CallSid:', callSid);
   console.log('All body params:', JSON.stringify(req.body, null, 2));
   console.log('All query params:', JSON.stringify(req.query, null, 2));
@@ -86,7 +78,13 @@ app.post('/exotel/answer', async (req, res) => {
   <Record transcriptionType="auto" transcriptionEnabled="true" playBeep="false" callbackUrl="${req.protocol}://${req.get('host')}/exotel/recording?callSid=${callSid}" />
 </Response>
   `.trim());
-});
+};
+
+// GET handler (Exotel Connect applet uses GET by default)
+app.get('/exotel/answer', handleExotelAnswer);
+
+// POST handler (for other Exotel integrations)
+app.post('/exotel/answer', handleExotelAnswer);
 
 // Exotel posts recording / transcription details to this URL.
 app.post('/exotel/recording', async (req, res) => {
