@@ -50,6 +50,16 @@ const getReply = async (sessionId, userUtterance) => {
   return aiMessage;
 };
 
+// GET handler for testing/debugging (browser access)
+app.get('/exotel/answer', (req, res) => {
+  res.status(200).json({
+    message: 'This endpoint accepts POST requests only. Exotel will call this with POST method.',
+    endpoint: '/exotel/answer',
+    method: 'POST',
+    expected: 'TwiML XML response with <Response>, <Say>, and <Record> tags'
+  });
+});
+
 // Exotel answers calls by requesting this URL to get TwiML-ish instructions.
 app.post('/exotel/answer', async (req, res) => {
   const callSid = req.body.CallSid || `call-${Date.now()}`;
