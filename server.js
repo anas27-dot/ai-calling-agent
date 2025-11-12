@@ -132,7 +132,7 @@ app.post('/exotel/recording', async (req, res) => {
 // Exotel Voicebot applet endpoint - handles all conversation flow through code
 app.get('/exotel/voicebot', async (req, res) => {
   // Handle GET requests (Voicebot might use GET for initial call)
-  const callSid = req.query.CallSid || req.query.callSid || `call-${Date.now()}`;
+  const callSid = req.query.CallSid || req.query.callSid || req.query.From || `call-${Date.now()}`;
   
   console.log('=== Voicebot Initial Call (GET) ===');
   console.log('CallSid:', callSid);
@@ -142,7 +142,7 @@ app.get('/exotel/voicebot', async (req, res) => {
     { role: 'assistant', content: 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?' }
   ]);
   
-  // Exotel Voicebot expects TwiML format, not JSON
+  // Exotel Voicebot - use Record instead of Gather for better compatibility
   const host = req.get('host');
   const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
   
@@ -150,19 +150,32 @@ app.get('/exotel/voicebot', async (req, res) => {
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say language="hi-IN" voice="woman">नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?</Say>
-  <Gather input="speech" language="hi-IN" speechTimeout="auto" action="${callbackUrl}" method="POST" />
+  <Record maxLength="30" finishOnKey="#" transcriptionType="auto" transcriptionEnabled="true" playBeep="false" callbackUrl="${callbackUrl}" method="POST" />
 </Response>`);
 });
 
 app.post('/exotel/voicebot', async (req, res) => {
-  const callSid = req.body.CallSid || req.body.callSid || req.query.callSid || `call-${Date.now()}`;
-  const userSpeech = req.body.SpeechResult || req.body.Transcription || req.body.text || req.body.Digits || '';
+  const callSid = req.query.callSid || req.body.CallSid || req.body.callSid || req.body.From || `call-${Date.now()}`;
+  const userSpeech = req.body.Transcription || req.body.SpeechResult || req.body.text || '';
 
   console.log('=== Voicebot Callback (POST) ===');
   console.log('CallSid:', callSid);
   console.log('User Speech:', userSpeech);
   console.log('All body params:', JSON.stringify(req.body, null, 2));
   console.log('All query params:', JSON.stringify(req.query, null, 2));
+
+  // If no transcription, just acknowledge
+  if (!userSpeech) {
+    const host = req.get('host');
+    const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
+    
+    res.set('Content-Type', 'application/xml');
+    return res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say language="hi-IN" voice="woman">क्षमा करें, मैं आपकी बात नहीं सुन पाया। कृपया दोबारा बोलें।</Say>
+  <Record maxLength="30" finishOnKey="#" transcriptionType="auto" transcriptionEnabled="true" playBeep="false" callbackUrl="${callbackUrl}" method="POST" />
+</Response>`);
+  }
 
   // Initialize session if not exists
   if (!callSessions.has(callSid)) {
@@ -183,19 +196,6 @@ app.post('/exotel/voicebot', async (req, res) => {
 </Response>`);
   }
 
-  // Process user speech and get AI response
-  if (!userSpeech) {
-    const host = req.get('host');
-    const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
-    
-    res.set('Content-Type', 'application/xml');
-    return res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say language="hi-IN" voice="woman">क्षमा करें, मैं आपकी बात नहीं सुन पाया। कृपया दोबारा बोलें।</Say>
-  <Gather input="speech" language="hi-IN" speechTimeout="auto" action="${callbackUrl}" method="POST" />
-</Response>`);
-  }
-
   try {
     const reply = await getReply(callSid, userSpeech);
     const host = req.get('host');
@@ -205,7 +205,7 @@ app.post('/exotel/voicebot', async (req, res) => {
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say language="hi-IN" voice="woman">${reply}</Say>
-  <Gather input="speech" language="hi-IN" speechTimeout="auto" action="${callbackUrl}" method="POST" />
+  <Record maxLength="30" finishOnKey="#" transcriptionType="auto" transcriptionEnabled="true" playBeep="false" callbackUrl="${callbackUrl}" method="POST" />
 </Response>`);
   } catch (err) {
     console.error('Error in voicebot:', err);
