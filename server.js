@@ -55,7 +55,7 @@ const handleInitialCall = (req, res) => {
   
   // Build callback URL for transcription
   const host = req.get('host');
-  const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
+  const callbackUrl = `https://${host}/exotel/voicebot?callSid=${encodeURIComponent(callSid)}`;
   
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -63,8 +63,10 @@ const handleInitialCall = (req, res) => {
   <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" callbackUrl="${callbackUrl}" method="POST" />
 </Response>`;
 
-  console.log('Callback URL:', callbackUrl);
-  console.log('Response XML:', xml);
+  console.log('Callback URL (raw):', callbackUrl);
+  console.log('CallSid value:', callSid);
+  console.log('CallSid type:', typeof callSid);
+  console.log('Full Response XML:', xml);
   console.log('Response Status: 200');
   console.log('Response Content-Type: application/xml');
   console.log(`========== ${req.method} RESPONSE SENT (INITIAL CALL) ==========\n`);
@@ -100,7 +102,7 @@ app.post('/exotel/voicebot', async (req, res) => {
       console.log('⚠️  WARNING: No transcription text received');
       console.log('Sending reprompt response...');
       const host = req.get('host');
-      const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
+      const callbackUrl = `https://${host}/exotel/voicebot?callSid=${encodeURIComponent(callSid)}`;
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say language="hi-IN" voice="Manvi">क्षमा करें, मैं समझ नहीं पाया। कृपया दोबारा बोलें।</Say>
@@ -138,7 +140,7 @@ app.post('/exotel/voicebot', async (req, res) => {
       console.log('Session updated. History length:', history.length);
 
       const host = req.get('host');
-      const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
+      const callbackUrl = `https://${host}/exotel/voicebot?callSid=${encodeURIComponent(callSid)}`;
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say language="hi-IN" voice="Manvi">${reply}</Say>
@@ -147,6 +149,7 @@ app.post('/exotel/voicebot', async (req, res) => {
 
       console.log('Response XML:', xml);
       console.log('Callback URL:', callbackUrl);
+      console.log('CallSid in callback:', callSid);
       console.log('========== POST RESPONSE (AI REPLY) ==========\n');
       res.set('Content-Type', 'application/xml; charset=utf-8').send(xml);
     } catch (err) {
