@@ -13,20 +13,23 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const sessions = new Map(); // CallSid → history
 
-// GET: Call starts → Record immediately
+// GET: Call starts → Greeting + Record
 app.get('/exotel/voicebot', (req, res) => {
   const callSid = req.query.CallSid || 'unknown';
   console.log('STEP 1: GET /exotel/voicebot → CallSid:', callSid);
+  console.log('All query params:', JSON.stringify(req.query, null, 2));
 
   sessions.set(callSid, []); // Start session
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Record maxLength="30" transcriptionEnabled="true" />
+  <Say language="hi-IN" voice="Manvi">नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?</Say>
+  <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" />
 </Response>`;
 
-  console.log('STEP 2: Sending XML → Start recording');
-  res.set('Content-Type', 'application/xml').send(xml);
+  console.log('STEP 2: Sending XML → Greeting + Start recording');
+  console.log('XML Response:', xml);
+  res.set('Content-Type', 'application/xml; charset=utf-8').send(xml);
 });
 
 // POST: Transcription received → AI reply
@@ -38,10 +41,12 @@ app.post('/exotel/voicebot', async (req, res) => {
 
   if (!text.trim()) {
     console.log('No speech → Reprompt');
-    return res.send(`<?xml version="1.0" encoding="UTF-8"?>
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Record maxLength="30" transcriptionEnabled="true" />
-</Response>`);
+  <Say language="hi-IN" voice="Manvi">क्षमा करें, मैं समझ नहीं पाया। कृपया दोबारा बोलें।</Say>
+  <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" />
+</Response>`;
+    return res.set('Content-Type', 'application/xml; charset=utf-8').send(xml);
   }
 
   // AI Reply
@@ -66,11 +71,11 @@ app.post('/exotel/voicebot', async (req, res) => {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say language="hi-IN" voice="Manvi">${reply}</Say>
-  <Record maxLength="30" transcriptionEnabled="true" />
+  <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" />
 </Response>`;
 
   console.log('STEP 5: Bot speaks → Loop');
-  res.set('Content-Type', 'application/xml').send(xml);
+  res.set('Content-Type', 'application/xml; charset=utf-8').send(xml);
 });
 
 // Health Check
