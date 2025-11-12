@@ -23,6 +23,14 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const sessions = new Map(); // CallSid → history
 
+const escapeForXml = (text = '') =>
+  text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
 // Helper function to handle initial call (both GET and POST)
 const handleInitialCall = (req, res) => {
   const timestamp = new Date().toISOString();
@@ -46,8 +54,16 @@ const handleInitialCall = (req, res) => {
   // Check if this is a transcription callback (has Transcription or SpeechResult)
   if (req.body.Transcription || req.body.SpeechResult) {
     console.log('⚠️  This looks like a transcription callback, not initial call');
-    console.log('Redirecting to POST handler...');
-    // Don't handle here, let POST handler take it
+    console.log('Returning reprompt TwiML so request completes cleanly.');
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say language="hi-IN">क्षमा करें, मैं समझ नहीं पाया। कृपया दोबारा बोलें।</Say>
+  <Record maxLength="30" transcriptionEnabled="true" />
+</Response>`;
+    res
+      .status(200)
+      .set('Content-Type', 'application/xml; charset=utf-8')
+      .send(xml);
     return;
   }
   
@@ -115,9 +131,10 @@ app.post('/exotel/connect', async (req, res) => {
       history.push({ role: 'assistant', content: reply });
       sessions.set(callSid, history);
 
+      const safeReply = escapeForXml(reply);
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say language="hi-IN">${reply}</Say>
+  <Say language="hi-IN">${safeReply}</Say>
   <Record maxLength="30" transcriptionEnabled="true" />
 </Response>`;
 
@@ -195,9 +212,10 @@ app.post('/exotel/voicebot', async (req, res) => {
       sessions.set(callSid, history);
       console.log('Session updated. History length:', history.length);
 
+      const safeReply = escapeForXml(reply);
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say language="hi-IN">${reply}</Say>
+  <Say language="hi-IN">${safeReply}</Say>
   <Record maxLength="30" transcriptionEnabled="true" />
 </Response>`;
 
@@ -277,7 +295,7 @@ server.on('upgrade', (request, socket, head) => {
   console.log('==============================================\n');
   
   if (pathname.startsWith('/stream')) {
-    wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.handleUpgrade(request, socket, head, async (ws) => {
       console.log(`✅ WebSocket Connected for CallSid: ${callSid}`);
       
       // Initialize session if not exists
@@ -370,21 +388,43 @@ server.on('upgrade', (request, socket, head) => {
         console.error(`❌ WebSocket Error for ${callSid}:`, error);
       });
       
-      // Send initial greeting immediately
-      console.log(`📢 Sending initial greeting for ${callSid}`);
-      ws.send(JSON.stringify({ 
-        type: 'text', 
-        text: 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?',
-        language: 'hi-IN'
-      }));
+      // Helper function to send audio to Exotel
+      const sendAudioToExotel = async (text, ws) => {
+        try {
+          console.log(`🎵 Generating TTS audio for: "${text}"`);
+          
+          // Generate audio using OpenAI TTS
+          const audioResponse = await openai.audio.speech.create({
+            model: 'tts-1',
+            voice: 'alloy', // or 'nova', 'echo', 'fable', 'onyx', 'shimmer'
+            input: text,
+            response_format: 'pcm', // PCM16 format for Exotel
+            speed: 1.0
+          });
+          
+          // Get audio buffer
+          const audioBuffer = Buffer.from(await audioResponse.arrayBuffer());
+          console.log(`✅ Generated audio: ${audioBuffer.length} bytes`);
+          
+          // Send audio as binary to Exotel
+          // Exotel expects PCM16 audio data directly
+          ws.send(audioBuffer);
+          console.log(`📤 Audio sent to Exotel`);
+          
+        } catch (err) {
+          console.error('❌ TTS Error:', err.message);
+          // Fallback: try sending as text (Exotel might handle it)
+          ws.send(JSON.stringify({ 
+            type: 'text', 
+            text: text,
+            language: 'hi-IN'
+          }));
+        }
+      };
       
-      // Also try alternative format
-      ws.send(JSON.stringify({
-        type: 'say',
-        text: 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?',
-        language: 'hi-IN',
-        voice: 'Manvi'
-      }));
+      // Send initial greeting immediately as audio
+      console.log(`📢 Sending initial greeting for ${callSid}`);
+      await sendAudioToExotel('नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?', ws);
     });
   } else {
     socket.destroy();
