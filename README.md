@@ -17,4 +17,3 @@ Minimal proof of concept using Express, Exotel, and OpenAI GPT-4 (Hindi + Englis
 - Trigger test call: `npm run test-call`
 
 Server logs show conversation state. Conversation gracefully ends after 2–3 back-and-forth exchanges.
-
