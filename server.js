@@ -55,17 +55,9 @@ const handleExotelAnswer = async (req, res) => {
   // Exotel can send CallSid in body (POST) or query params (GET)
   const callSid = req.body?.CallSid || req.query?.CallSid || `call-${Date.now()}`;
   
-  // Log all incoming parameters including passthrough data
   console.log('=== Incoming Call ===');
   console.log('Method:', req.method);
   console.log('CallSid:', callSid);
-  console.log('All body params:', JSON.stringify(req.body, null, 2));
-  console.log('All query params:', JSON.stringify(req.query, null, 2));
-  
-  // Extract passthrough parameters (any custom params you send from Exotel)
-  const passthroughParams = { ...req.body, ...req.query };
-  delete passthroughParams.CallSid; // Remove standard Exotel params if needed
-  console.log('Passthrough params:', passthroughParams);
   
   callSessions.set(callSid, [
     { role: 'assistant', content: 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?' }
@@ -75,13 +67,13 @@ const handleExotelAnswer = async (req, res) => {
   const host = req.get('host');
   const callbackUrl = `https://${host}/exotel/recording?callSid=${callSid}`;
   
-  res.type('application/xml');
-  res.send(`
+  // CRITICAL: Set proper content type and send clean XML
+  res.set('Content-Type', 'application/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say language="hi-IN">नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?</Say>
-  <Record transcriptionType="auto" transcriptionEnabled="true" playBeep="false" callbackUrl="${callbackUrl}" />
-</Response>
-  `.trim());
+  <Say language="hi-IN" voice="woman">नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?</Say>
+  <Record maxLength="30" finishOnKey="#" transcriptionType="auto" transcriptionEnabled="true" playBeep="false" callbackUrl="${callbackUrl}" />
+</Response>`);
 };
 
 // GET handler (Exotel Connect applet uses GET by default)
@@ -95,6 +87,10 @@ app.post('/exotel/recording', async (req, res) => {
   const sessionId = req.query.callSid;
   const transcription = req.body.Transcription ?? req.body.SpeechResult ?? '';
 
+  console.log('=== Recording Callback ===');
+  console.log('SessionId:', sessionId);
+  console.log('Transcription:', transcription);
+
   if (!sessionId || !transcription) {
     return res.status(200).send('OK');
   }
@@ -102,12 +98,12 @@ app.post('/exotel/recording', async (req, res) => {
   const history = callSessions.get(sessionId) || [];
   if (history.length >= 6) {
     callSessions.delete(sessionId);
-    return res.type('application/xml').send(`
+    res.set('Content-Type', 'application/xml');
+    return res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say language="hi-IN">धन्यवाद! आपका दिन शुभ हो।</Say>
+  <Say language="hi-IN" voice="woman">धन्यवाद! आपका दिन शुभ हो।</Say>
   <Hangup/>
-</Response>
-    `.trim());
+</Response>`);
   }
 
   try {
@@ -116,20 +112,20 @@ app.post('/exotel/recording', async (req, res) => {
     const host = req.get('host');
     const callbackUrl = `https://${host}/exotel/recording?callSid=${sessionId}`;
     
-    res.type('application/xml').send(`
+    res.set('Content-Type', 'application/xml');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say language="hi-IN">${reply}</Say>
-  <Record transcriptionType="auto" transcriptionEnabled="true" playBeep="false" callbackUrl="${callbackUrl}" />
-</Response>
-    `.trim());
+  <Say language="hi-IN" voice="woman">${reply}</Say>
+  <Record maxLength="30" finishOnKey="#" transcriptionType="auto" transcriptionEnabled="true" playBeep="false" callbackUrl="${callbackUrl}" />
+</Response>`);
   } catch (err) {
-    console.error(err);
-    res.type('application/xml').send(`
+    console.error('Error:', err);
+    res.set('Content-Type', 'application/xml');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say language="hi-IN">क्षमा करें, कुछ समस्या आ गई है। कृपया बाद में पुनः प्रयास करें।</Say>
+  <Say language="hi-IN" voice="woman">क्षमा करें, कुछ समस्या आ गई है। कृपया बाद में पुनः प्रयास करें।</Say>
   <Hangup/>
-</Response>
-    `.trim());
+</Response>`);
   }
 });
 
