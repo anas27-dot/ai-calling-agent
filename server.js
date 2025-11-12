@@ -53,6 +53,18 @@ const getReply = async (sessionId, userUtterance) => {
 // Exotel answers calls by requesting this URL to get TwiML-ish instructions.
 app.post('/exotel/answer', async (req, res) => {
   const callSid = req.body.CallSid || `call-${Date.now()}`;
+  
+  // Log all incoming parameters including passthrough data
+  console.log('=== Incoming Call ===');
+  console.log('CallSid:', callSid);
+  console.log('All body params:', JSON.stringify(req.body, null, 2));
+  console.log('All query params:', JSON.stringify(req.query, null, 2));
+  
+  // Extract passthrough parameters (any custom params you send from Exotel)
+  const passthroughParams = { ...req.body, ...req.query };
+  delete passthroughParams.CallSid; // Remove standard Exotel params if needed
+  console.log('Passthrough params:', passthroughParams);
+  
   callSessions.set(callSid, [
     { role: 'assistant', content: 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?' }
   ]);
