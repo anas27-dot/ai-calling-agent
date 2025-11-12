@@ -136,92 +136,85 @@ app.get('/exotel/voicebot', async (req, res) => {
   
   console.log('=== Voicebot Initial Call (GET) ===');
   console.log('CallSid:', callSid);
+  console.log('All query params:', JSON.stringify(req.query, null, 2));
   
   callSessions.set(callSid, [
     { role: 'assistant', content: 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?' }
   ]);
   
-  res.set('Content-Type', 'application/json');
-  res.json({
-    action: 'say',
-    text: 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?',
-    language: 'hi-IN',
-    voice: 'woman'
-  });
+  // Exotel Voicebot expects TwiML format, not JSON
+  const host = req.get('host');
+  const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
+  
+  res.set('Content-Type', 'application/xml');
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say language="hi-IN" voice="woman">नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?</Say>
+  <Gather input="speech" language="hi-IN" speechTimeout="auto" action="${callbackUrl}" method="POST" />
+</Response>`);
 });
 
 app.post('/exotel/voicebot', async (req, res) => {
-  const callSid = req.body.CallSid || req.body.callSid || req.query.CallSid || `call-${Date.now()}`;
-  const userSpeech = req.body.SpeechResult || req.body.Transcription || req.body.text || '';
-  const isFirstCall = req.body.isFirstCall || !userSpeech;
+  const callSid = req.body.CallSid || req.body.callSid || req.query.callSid || `call-${Date.now()}`;
+  const userSpeech = req.body.SpeechResult || req.body.Transcription || req.body.text || req.body.Digits || '';
 
-  console.log('=== Voicebot Callback ===');
+  console.log('=== Voicebot Callback (POST) ===');
   console.log('CallSid:', callSid);
   console.log('User Speech:', userSpeech);
-  console.log('Is First Call:', isFirstCall);
   console.log('All body params:', JSON.stringify(req.body, null, 2));
+  console.log('All query params:', JSON.stringify(req.query, null, 2));
 
-  // Initialize session on first call
-  if (isFirstCall || !callSessions.has(callSid)) {
+  // Initialize session if not exists
+  if (!callSessions.has(callSid)) {
     callSessions.set(callSid, [
       { role: 'assistant', content: 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?' }
     ]);
-    
-    // Return greeting for first call
-    res.set('Content-Type', 'application/json');
-    return res.json({
-      action: 'say',
-      text: 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?',
-      language: 'hi-IN',
-      voice: 'woman'
-    });
   }
 
   // Check if conversation limit reached
   const history = callSessions.get(callSid) || [];
   if (history.length >= 6) {
     callSessions.delete(callSid);
-    res.set('Content-Type', 'application/json');
-    return res.json({
-      action: 'say',
-      text: 'धन्यवाद! आपका दिन शुभ हो।',
-      language: 'hi-IN',
-      voice: 'woman',
-      actionAfter: 'hangup'
-    });
+    res.set('Content-Type', 'application/xml');
+    return res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say language="hi-IN" voice="woman">धन्यवाद! आपका दिन शुभ हो।</Say>
+  <Hangup/>
+</Response>`);
   }
 
   // Process user speech and get AI response
   if (!userSpeech) {
-    res.set('Content-Type', 'application/json');
-    return res.json({
-      action: 'say',
-      text: 'क्षमा करें, मैं आपकी बात नहीं सुन पाया। कृपया दोबारा बोलें।',
-      language: 'hi-IN',
-      voice: 'woman'
-    });
+    const host = req.get('host');
+    const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
+    
+    res.set('Content-Type', 'application/xml');
+    return res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say language="hi-IN" voice="woman">क्षमा करें, मैं आपकी बात नहीं सुन पाया। कृपया दोबारा बोलें।</Say>
+  <Gather input="speech" language="hi-IN" speechTimeout="auto" action="${callbackUrl}" method="POST" />
+</Response>`);
   }
 
   try {
     const reply = await getReply(callSid, userSpeech);
+    const host = req.get('host');
+    const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
     
-    res.set('Content-Type', 'application/json');
-    res.json({
-      action: 'say',
-      text: reply,
-      language: 'hi-IN',
-      voice: 'woman'
-    });
+    res.set('Content-Type', 'application/xml');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say language="hi-IN" voice="woman">${reply}</Say>
+  <Gather input="speech" language="hi-IN" speechTimeout="auto" action="${callbackUrl}" method="POST" />
+</Response>`);
   } catch (err) {
     console.error('Error in voicebot:', err);
-    res.set('Content-Type', 'application/json');
-    res.json({
-      action: 'say',
-      text: 'क्षमा करें, कुछ समस्या आ गई है। कृपया बाद में पुनः प्रयास करें।',
-      language: 'hi-IN',
-      voice: 'woman',
-      actionAfter: 'hangup'
-    });
+    res.set('Content-Type', 'application/xml');
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say language="hi-IN" voice="woman">क्षमा करें, कुछ समस्या आ गई है। कृपया बाद में पुनः प्रयास करें।</Say>
+  <Hangup/>
+</Response>`);
   }
 });
 
