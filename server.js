@@ -129,6 +129,102 @@ app.post('/exotel/recording', async (req, res) => {
   }
 });
 
+// Exotel Voicebot applet endpoint - handles all conversation flow through code
+app.get('/exotel/voicebot', async (req, res) => {
+  // Handle GET requests (Voicebot might use GET for initial call)
+  const callSid = req.query.CallSid || req.query.callSid || `call-${Date.now()}`;
+  
+  console.log('=== Voicebot Initial Call (GET) ===');
+  console.log('CallSid:', callSid);
+  
+  callSessions.set(callSid, [
+    { role: 'assistant', content: 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?' }
+  ]);
+  
+  res.set('Content-Type', 'application/json');
+  res.json({
+    action: 'say',
+    text: 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?',
+    language: 'hi-IN',
+    voice: 'woman'
+  });
+});
+
+app.post('/exotel/voicebot', async (req, res) => {
+  const callSid = req.body.CallSid || req.body.callSid || req.query.CallSid || `call-${Date.now()}`;
+  const userSpeech = req.body.SpeechResult || req.body.Transcription || req.body.text || '';
+  const isFirstCall = req.body.isFirstCall || !userSpeech;
+
+  console.log('=== Voicebot Callback ===');
+  console.log('CallSid:', callSid);
+  console.log('User Speech:', userSpeech);
+  console.log('Is First Call:', isFirstCall);
+  console.log('All body params:', JSON.stringify(req.body, null, 2));
+
+  // Initialize session on first call
+  if (isFirstCall || !callSessions.has(callSid)) {
+    callSessions.set(callSid, [
+      { role: 'assistant', content: 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?' }
+    ]);
+    
+    // Return greeting for first call
+    res.set('Content-Type', 'application/json');
+    return res.json({
+      action: 'say',
+      text: 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?',
+      language: 'hi-IN',
+      voice: 'woman'
+    });
+  }
+
+  // Check if conversation limit reached
+  const history = callSessions.get(callSid) || [];
+  if (history.length >= 6) {
+    callSessions.delete(callSid);
+    res.set('Content-Type', 'application/json');
+    return res.json({
+      action: 'say',
+      text: 'धन्यवाद! आपका दिन शुभ हो।',
+      language: 'hi-IN',
+      voice: 'woman',
+      actionAfter: 'hangup'
+    });
+  }
+
+  // Process user speech and get AI response
+  if (!userSpeech) {
+    res.set('Content-Type', 'application/json');
+    return res.json({
+      action: 'say',
+      text: 'क्षमा करें, मैं आपकी बात नहीं सुन पाया। कृपया दोबारा बोलें।',
+      language: 'hi-IN',
+      voice: 'woman'
+    });
+  }
+
+  try {
+    const reply = await getReply(callSid, userSpeech);
+    
+    res.set('Content-Type', 'application/json');
+    res.json({
+      action: 'say',
+      text: reply,
+      language: 'hi-IN',
+      voice: 'woman'
+    });
+  } catch (err) {
+    console.error('Error in voicebot:', err);
+    res.set('Content-Type', 'application/json');
+    res.json({
+      action: 'say',
+      text: 'क्षमा करें, कुछ समस्या आ गई है। कृपया बाद में पुनः प्रयास करें।',
+      language: 'hi-IN',
+      voice: 'woman',
+      actionAfter: 'hangup'
+    });
+  }
+});
+
 // Basic health check
 app.get('/', (_, res) => {
   res.send('AI calling agent MVP is running.');
