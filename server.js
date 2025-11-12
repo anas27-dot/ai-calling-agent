@@ -57,10 +57,11 @@ const handleInitialCall = (req, res) => {
   const host = req.get('host');
   const callbackUrl = `https://${host}/exotel/voicebot?callSid=${encodeURIComponent(callSid)}`;
   
+  // Simplified TwiML - Exotel Voicebot might need simpler structure
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say language="hi-IN" voice="Manvi">बोलिए...</Say>
-  <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" callbackUrl="${callbackUrl}" method="POST" />
+  <Say language="hi-IN">बोलिए...</Say>
+  <Record maxLength="30" transcriptionEnabled="true" callbackUrl="${callbackUrl}" method="POST" />
 </Response>`;
 
   console.log('Callback URL (raw):', callbackUrl);
@@ -76,6 +77,63 @@ const handleInitialCall = (req, res) => {
 
 // GET: Call starts → Greeting + Record
 app.get('/exotel/voicebot', handleInitialCall);
+
+// Alternative endpoint for Connect applet (if Voicebot doesn't work)
+app.get('/exotel/connect', handleInitialCall);
+app.post('/exotel/connect', async (req, res) => {
+  // Same as voicebot POST handler
+  if (req.body.Transcription || req.body.SpeechResult) {
+    const callSid = req.body.CallSid || req.query.callSid;
+    const text = req.body.Transcription || req.body.SpeechResult || '';
+    
+    if (!text.trim()) {
+      const host = req.get('host');
+      const callbackUrl = `https://${host}/exotel/connect?callSid=${encodeURIComponent(callSid)}`;
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say language="hi-IN">क्षमा करें, मैं समझ नहीं पाया। कृपया दोबारा बोलें।</Say>
+  <Record maxLength="30" transcriptionEnabled="true" callbackUrl="${callbackUrl}" method="POST" />
+</Response>`;
+      return res.set('Content-Type', 'application/xml; charset=utf-8').send(xml);
+    }
+
+    const history = sessions.get(callSid) || [];
+    history.push({ role: 'user', content: text });
+
+    try {
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: 'You are a helpful Hindi assistant. Reply in short Hindi.' },
+          ...history.slice(-5)
+        ]
+      });
+
+      const reply = completion.choices[0].message.content.trim();
+      history.push({ role: 'assistant', content: reply });
+      sessions.set(callSid, history);
+
+      const host = req.get('host');
+      const callbackUrl = `https://${host}/exotel/connect?callSid=${encodeURIComponent(callSid)}`;
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say language="hi-IN">${reply}</Say>
+  <Record maxLength="30" transcriptionEnabled="true" callbackUrl="${callbackUrl}" method="POST" />
+</Response>`;
+
+      res.set('Content-Type', 'application/xml; charset=utf-8').send(xml);
+    } catch (err) {
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say language="hi-IN">क्षमा करें, त्रुटि हुई।</Say>
+  <Hangup/>
+</Response>`;
+      res.set('Content-Type', 'application/xml; charset=utf-8').send(xml);
+    }
+  } else {
+    handleInitialCall(req, res);
+  }
+});
 
 // POST: Can be initial call OR transcription callback
 app.post('/exotel/voicebot', async (req, res) => {
