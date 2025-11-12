@@ -309,65 +309,14 @@ server.on('upgrade', (request, socket, head) => {
               
               console.log(`🎤 Transcribing audio (${audioBuffer.length} bytes) for ${callSid}...`);
               
-              try {
-                // Note: Exotel may send transcription separately via JSON messages
-                // For now, we'll accumulate audio but wait for transcription messages
-                // If needed, we can implement proper PCM to WAV conversion later
-                console.log(`⏳ Audio accumulated, waiting for transcription or processing...`);
-                
-                // For now, skip direct transcription and wait for Exotel's transcription
-                // This is a placeholder - Exotel Voicebot typically sends transcription via JSON
-                isProcessing = false;
-                return;
-                
-                const text = transcription.text.trim();
-                console.log(`✅ Transcription: "${text}"`);
-                
-                if (text) {
-                  const history = sessions.get(callSid) || [];
-                  history.push({ role: 'user', content: text });
-                  
-                  // Get AI reply
-                  const completion = await openai.chat.completions.create({
-                    model: 'gpt-4o-mini',
-                    messages: [
-                      { role: 'system', content: 'You are a helpful Hindi assistant. Reply in short Hindi sentences.' },
-                      ...history.slice(-5)
-                    ]
-                  });
-                  
-                  const reply = completion.choices[0].message.content.trim();
-                  history.push({ role: 'assistant', content: reply });
-                  sessions.set(callSid, history);
-                  
-                  console.log(`🤖 AI Reply: "${reply}"`);
-                  
-                  // Send reply back to Exotel as text (Exotel will convert to speech)
-                  // Try multiple formats that Exotel might accept
-                  ws.send(JSON.stringify({ 
-                    type: 'text', 
-                    text: reply,
-                    language: 'hi-IN'
-                  }));
-                  
-                  // Also try sending as audio instruction
-                  ws.send(JSON.stringify({
-                    type: 'say',
-                    text: reply,
-                    language: 'hi-IN',
-                    voice: 'Manvi'
-                  }));
-                  
-                  console.log(`✅ Reply sent to Exotel`);
-                  
-                  // Clear audio buffer after processing
-                  audioBuffer = Buffer.alloc(0);
-                }
-              } catch (transcribeErr) {
-                console.error('❌ Transcription error:', transcribeErr.message);
-              } finally {
-                isProcessing = false;
-              }
+              // Note: Exotel may send transcription separately via JSON messages
+              // For now, we'll accumulate audio but wait for transcription messages
+              // If needed, we can implement proper PCM to WAV conversion later
+              console.log(`⏳ Audio accumulated (${audioBuffer.length} bytes), waiting for Exotel transcription...`);
+              
+              // Exotel Voicebot typically sends transcription via JSON messages
+              // The transcription will be handled in the JSON message handler below
+              isProcessing = false;
             }
           } else {
             // JSON message from Exotel
