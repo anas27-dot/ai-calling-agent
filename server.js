@@ -264,64 +264,142 @@ const wss = new WebSocketServer({ noServer: true });
 
 // Handle WebSocket upgrade
 server.on('upgrade', (request, socket, head) => {
-  const { pathname, searchParams } = new URL(request.url, `http://${request.headers.host}`);
+  const fullUrl = `http://${request.headers.host}${request.url}`;
+  const url = new URL(fullUrl);
+  const pathname = url.pathname;
+  const callSid = url.searchParams.get('callSid') || 'unknown';
+  
+  console.log(`\n========== WebSocket Upgrade Request ==========`);
+  console.log('Full URL:', fullUrl);
+  console.log('Pathname:', pathname);
+  console.log('CallSid from query:', callSid);
+  console.log('All query params:', Object.fromEntries(url.searchParams));
+  console.log('==============================================\n');
   
   if (pathname.startsWith('/stream')) {
-    const callSid = searchParams.get('callSid') || 'unknown';
-    console.log(`\n========== WebSocket Upgrade Request ==========`);
-    console.log('CallSid:', callSid);
-    console.log('Path:', pathname);
-    console.log('Headers:', JSON.stringify(request.headers, null, 2));
-    console.log('==============================================\n');
-    
     wss.handleUpgrade(request, socket, head, (ws) => {
       console.log(`✅ WebSocket Connected for CallSid: ${callSid}`);
       
       // Initialize session if not exists
       if (!sessions.has(callSid)) {
         sessions.set(callSid, []);
+        console.log(`📝 Session initialized for ${callSid}`);
       }
+      
+      // Audio buffer for accumulating audio chunks
+      let audioBuffer = Buffer.alloc(0);
+      let lastTranscriptionTime = Date.now();
+      const TRANSCRIPTION_INTERVAL = 3000; // Transcribe every 3 seconds
+      let isProcessing = false;
       
       // Handle incoming audio from Exotel
       ws.on('message', async (data) => {
         try {
-          // Exotel sends audio as binary or JSON
+          // Exotel sends audio as binary (PCM audio data)
           if (data instanceof Buffer) {
-            // Binary audio data - forward to OpenAI Realtime API
-            console.log(` audio received (${data.length} bytes) for ${callSid}`);
-            // TODO: Implement OpenAI Realtime API integration
-            // For now, log the audio data
-          } else {
-            const msg = JSON.parse(data.toString());
-            console.log(`📨 Message from Exotel:`, msg);
+            // Accumulate audio chunks
+            audioBuffer = Buffer.concat([audioBuffer, data]);
+            console.log(` audio received (${data.length} bytes, total: ${audioBuffer.length} bytes) for ${callSid}`);
             
-            // Handle different message types from Exotel
-            if (msg.type === 'audio') {
-              // Process audio data
-            } else if (msg.type === 'transcription') {
-              // Handle transcription
-              const text = msg.text || '';
-              if (text.trim()) {
-                const history = sessions.get(callSid) || [];
-                history.push({ role: 'user', content: text });
+            // Periodically transcribe accumulated audio
+            const now = Date.now();
+            if (now - lastTranscriptionTime >= TRANSCRIPTION_INTERVAL && !isProcessing && audioBuffer.length > 0) {
+              isProcessing = true;
+              lastTranscriptionTime = now;
+              
+              console.log(`🎤 Transcribing audio (${audioBuffer.length} bytes) for ${callSid}...`);
+              
+              try {
+                // Note: Exotel may send transcription separately via JSON messages
+                // For now, we'll accumulate audio but wait for transcription messages
+                // If needed, we can implement proper PCM to WAV conversion later
+                console.log(`⏳ Audio accumulated, waiting for transcription or processing...`);
                 
-                // Get AI reply
-                const completion = await openai.chat.completions.create({
-                  model: 'gpt-4o-mini',
-                  messages: [
-                    { role: 'system', content: 'You are a helpful Hindi assistant. Reply in short Hindi.' },
-                    ...history.slice(-5)
-                  ]
-                });
+                // For now, skip direct transcription and wait for Exotel's transcription
+                // This is a placeholder - Exotel Voicebot typically sends transcription via JSON
+                isProcessing = false;
+                return;
                 
-                const reply = completion.choices[0].message.content.trim();
-                history.push({ role: 'assistant', content: reply });
-                sessions.set(callSid, history);
+                const text = transcription.text.trim();
+                console.log(`✅ Transcription: "${text}"`);
                 
-                // Send reply back to Exotel (format depends on Exotel's protocol)
-                ws.send(JSON.stringify({ type: 'text', text: reply }));
-                console.log(`✅ AI Reply sent: ${reply}`);
+                if (text) {
+                  const history = sessions.get(callSid) || [];
+                  history.push({ role: 'user', content: text });
+                  
+                  // Get AI reply
+                  const completion = await openai.chat.completions.create({
+                    model: 'gpt-4o-mini',
+                    messages: [
+                      { role: 'system', content: 'You are a helpful Hindi assistant. Reply in short Hindi sentences.' },
+                      ...history.slice(-5)
+                    ]
+                  });
+                  
+                  const reply = completion.choices[0].message.content.trim();
+                  history.push({ role: 'assistant', content: reply });
+                  sessions.set(callSid, history);
+                  
+                  console.log(`🤖 AI Reply: "${reply}"`);
+                  
+                  // Send reply back to Exotel as text (Exotel will convert to speech)
+                  // Try multiple formats that Exotel might accept
+                  ws.send(JSON.stringify({ 
+                    type: 'text', 
+                    text: reply,
+                    language: 'hi-IN'
+                  }));
+                  
+                  // Also try sending as audio instruction
+                  ws.send(JSON.stringify({
+                    type: 'say',
+                    text: reply,
+                    language: 'hi-IN',
+                    voice: 'Manvi'
+                  }));
+                  
+                  console.log(`✅ Reply sent to Exotel`);
+                  
+                  // Clear audio buffer after processing
+                  audioBuffer = Buffer.alloc(0);
+                }
+              } catch (transcribeErr) {
+                console.error('❌ Transcription error:', transcribeErr.message);
+              } finally {
+                isProcessing = false;
               }
+            }
+          } else {
+            // JSON message from Exotel
+            try {
+              const msg = JSON.parse(data.toString());
+              console.log(`📨 JSON Message from Exotel:`, msg);
+              
+              // Handle different message types
+              if (msg.type === 'transcription' || msg.text) {
+                const text = msg.text || msg.transcription || '';
+                if (text.trim()) {
+                  const history = sessions.get(callSid) || [];
+                  history.push({ role: 'user', content: text });
+                  
+                  const completion = await openai.chat.completions.create({
+                    model: 'gpt-4o-mini',
+                    messages: [
+                      { role: 'system', content: 'You are a helpful Hindi assistant. Reply in short Hindi.' },
+                      ...history.slice(-5)
+                    ]
+                  });
+                  
+                  const reply = completion.choices[0].message.content.trim();
+                  history.push({ role: 'assistant', content: reply });
+                  sessions.set(callSid, history);
+                  
+                  ws.send(JSON.stringify({ type: 'text', text: reply }));
+                  console.log(`✅ AI Reply sent: ${reply}`);
+                }
+              }
+            } catch (parseErr) {
+              console.log(`📦 Non-JSON message:`, data.toString().substring(0, 100));
             }
           }
         } catch (err) {
@@ -331,23 +409,32 @@ server.on('upgrade', (request, socket, head) => {
       
       ws.on('close', () => {
         console.log(`🔌 WebSocket Closed for CallSid: ${callSid}`);
-        // Optionally cleanup session after delay
         setTimeout(() => {
           if (sessions.has(callSid)) {
             sessions.delete(callSid);
             console.log(`🗑️  Session cleaned up for ${callSid}`);
           }
-        }, 60000); // Cleanup after 1 minute
+        }, 60000);
       });
       
       ws.on('error', (error) => {
         console.error(`❌ WebSocket Error for ${callSid}:`, error);
       });
       
-      // Send initial greeting
+      // Send initial greeting immediately
+      console.log(`📢 Sending initial greeting for ${callSid}`);
       ws.send(JSON.stringify({ 
         type: 'text', 
-        text: 'बोलिए...' 
+        text: 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?',
+        language: 'hi-IN'
+      }));
+      
+      // Also try alternative format
+      ws.send(JSON.stringify({
+        type: 'say',
+        text: 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?',
+        language: 'hi-IN',
+        voice: 'Manvi'
       }));
     });
   } else {
