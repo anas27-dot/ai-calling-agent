@@ -2,6 +2,8 @@
 import express from 'express';
 import { OpenAI } from 'openai';
 import dotenv from 'dotenv';
+import { WebSocketServer } from 'ws';
+import { createServer } from 'http';
 
 dotenv.config();
 
@@ -57,11 +59,11 @@ const handleInitialCall = (req, res) => {
   const host = req.get('host');
   const callbackUrl = `https://${host}/exotel/voicebot?callSid=${encodeURIComponent(callSid)}`;
   
-  // Simplified TwiML - Exotel Voicebot might need simpler structure
+  // Clean TwiML - Remove callbackUrl (Voicebot Applet ignores it)
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say language="hi-IN">बोलिए...</Say>
-  <Record maxLength="30" transcriptionEnabled="true" callbackUrl="${callbackUrl}" method="POST" />
+  <Record maxLength="30" transcriptionEnabled="true" />
 </Response>`;
 
   console.log('Callback URL (raw):', callbackUrl);
@@ -92,7 +94,7 @@ app.post('/exotel/connect', async (req, res) => {
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say language="hi-IN">क्षमा करें, मैं समझ नहीं पाया। कृपया दोबारा बोलें।</Say>
-  <Record maxLength="30" transcriptionEnabled="true" callbackUrl="${callbackUrl}" method="POST" />
+  <Record maxLength="30" transcriptionEnabled="true" />
 </Response>`;
       return res.set('Content-Type', 'application/xml; charset=utf-8').send(xml);
     }
@@ -113,12 +115,10 @@ app.post('/exotel/connect', async (req, res) => {
       history.push({ role: 'assistant', content: reply });
       sessions.set(callSid, history);
 
-      const host = req.get('host');
-      const callbackUrl = `https://${host}/exotel/connect?callSid=${encodeURIComponent(callSid)}`;
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say language="hi-IN">${reply}</Say>
-  <Record maxLength="30" transcriptionEnabled="true" callbackUrl="${callbackUrl}" method="POST" />
+  <Record maxLength="30" transcriptionEnabled="true" />
 </Response>`;
 
       res.set('Content-Type', 'application/xml; charset=utf-8').send(xml);
@@ -159,12 +159,10 @@ app.post('/exotel/voicebot', async (req, res) => {
     if (!text.trim()) {
       console.log('⚠️  WARNING: No transcription text received');
       console.log('Sending reprompt response...');
-      const host = req.get('host');
-      const callbackUrl = `https://${host}/exotel/voicebot?callSid=${encodeURIComponent(callSid)}`;
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say language="hi-IN" voice="Manvi">क्षमा करें, मैं समझ नहीं पाया। कृपया दोबारा बोलें।</Say>
-  <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" callbackUrl="${callbackUrl}" method="POST" />
+  <Say language="hi-IN">क्षमा करें, मैं समझ नहीं पाया। कृपया दोबारा बोलें।</Say>
+  <Record maxLength="30" transcriptionEnabled="true" />
 </Response>`;
       console.log('Reprompt XML:', xml);
       console.log('========== POST RESPONSE (REPROMPT) ==========\n');
@@ -197,17 +195,13 @@ app.post('/exotel/voicebot', async (req, res) => {
       sessions.set(callSid, history);
       console.log('Session updated. History length:', history.length);
 
-      const host = req.get('host');
-      const callbackUrl = `https://${host}/exotel/voicebot?callSid=${encodeURIComponent(callSid)}`;
       const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say language="hi-IN" voice="Manvi">${reply}</Say>
-  <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" callbackUrl="${callbackUrl}" method="POST" />
+  <Say language="hi-IN">${reply}</Say>
+  <Record maxLength="30" transcriptionEnabled="true" />
 </Response>`;
 
       console.log('Response XML:', xml);
-      console.log('Callback URL:', callbackUrl);
-      console.log('CallSid in callback:', callSid);
       console.log('========== POST RESPONSE (AI REPLY) ==========\n');
       res.set('Content-Type', 'application/xml; charset=utf-8').send(xml);
     } catch (err) {
@@ -231,18 +225,135 @@ app.post('/exotel/voicebot', async (req, res) => {
   }
 });
 
+// WSS Resolver Endpoint for Voicebot Applet (returns dynamic WSS URL)
+app.post('/resolve-wss', (req, res) => {
+  const callSid = req.body.CallSid || req.query.CallSid || `call-${Date.now()}`;
+  const host = req.get('host');
+  // Use wss:// for Render (HTTPS automatically becomes WSS)
+  const wssUrl = `wss://${host}/stream?callSid=${encodeURIComponent(callSid)}`;
+  
+  console.log('\n========== WSS RESOLVER REQUEST ==========');
+  console.log('CallSid:', callSid);
+  console.log('WSS URL:', wssUrl);
+  console.log('Body:', JSON.stringify(req.body, null, 2));
+  console.log('==========================================\n');
+  
+  res.json({ url: wssUrl });
+});
+
 // Health Check
 app.get('/', (req, res) => {
   console.log('Health check requested');
-  res.send('Bot LIVE');
+  res.send('Bot LIVE - TwiML and WebSocket ready');
 });
 
+// Create HTTP server for WebSocket upgrade support
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
+const server = createServer(app);
+
+// WebSocket Server for Voicebot streaming
+const wss = new WebSocketServer({ noServer: true });
+
+// Handle WebSocket upgrade
+server.on('upgrade', (request, socket, head) => {
+  const { pathname, searchParams } = new URL(request.url, `http://${request.headers.host}`);
+  
+  if (pathname.startsWith('/stream')) {
+    const callSid = searchParams.get('callSid') || 'unknown';
+    console.log(`\n========== WebSocket Upgrade Request ==========`);
+    console.log('CallSid:', callSid);
+    console.log('Path:', pathname);
+    console.log('Headers:', JSON.stringify(request.headers, null, 2));
+    console.log('==============================================\n');
+    
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      console.log(`✅ WebSocket Connected for CallSid: ${callSid}`);
+      
+      // Initialize session if not exists
+      if (!sessions.has(callSid)) {
+        sessions.set(callSid, []);
+      }
+      
+      // Handle incoming audio from Exotel
+      ws.on('message', async (data) => {
+        try {
+          // Exotel sends audio as binary or JSON
+          if (data instanceof Buffer) {
+            // Binary audio data - forward to OpenAI Realtime API
+            console.log(` audio received (${data.length} bytes) for ${callSid}`);
+            // TODO: Implement OpenAI Realtime API integration
+            // For now, log the audio data
+          } else {
+            const msg = JSON.parse(data.toString());
+            console.log(`📨 Message from Exotel:`, msg);
+            
+            // Handle different message types from Exotel
+            if (msg.type === 'audio') {
+              // Process audio data
+            } else if (msg.type === 'transcription') {
+              // Handle transcription
+              const text = msg.text || '';
+              if (text.trim()) {
+                const history = sessions.get(callSid) || [];
+                history.push({ role: 'user', content: text });
+                
+                // Get AI reply
+                const completion = await openai.chat.completions.create({
+                  model: 'gpt-4o-mini',
+                  messages: [
+                    { role: 'system', content: 'You are a helpful Hindi assistant. Reply in short Hindi.' },
+                    ...history.slice(-5)
+                  ]
+                });
+                
+                const reply = completion.choices[0].message.content.trim();
+                history.push({ role: 'assistant', content: reply });
+                sessions.set(callSid, history);
+                
+                // Send reply back to Exotel (format depends on Exotel's protocol)
+                ws.send(JSON.stringify({ type: 'text', text: reply }));
+                console.log(`✅ AI Reply sent: ${reply}`);
+              }
+            }
+          }
+        } catch (err) {
+          console.error('❌ Error processing WebSocket message:', err);
+        }
+      });
+      
+      ws.on('close', () => {
+        console.log(`🔌 WebSocket Closed for CallSid: ${callSid}`);
+        // Optionally cleanup session after delay
+        setTimeout(() => {
+          if (sessions.has(callSid)) {
+            sessions.delete(callSid);
+            console.log(`🗑️  Session cleaned up for ${callSid}`);
+          }
+        }, 60000); // Cleanup after 1 minute
+      });
+      
+      ws.on('error', (error) => {
+        console.error(`❌ WebSocket Error for ${callSid}:`, error);
+      });
+      
+      // Send initial greeting
+      ws.send(JSON.stringify({ 
+        type: 'text', 
+        text: 'बोलिए...' 
+      }));
+    });
+  } else {
+    socket.destroy();
+  }
+});
+
+server.listen(PORT, '0.0.0.0', () => {
   console.log('\n🚀 ========== SERVER STARTED ==========');
   console.log('Port:', PORT);
   console.log('Environment:', process.env.NODE_ENV || 'development');
   console.log('OpenAI API Key:', process.env.OPENAI_API_KEY ? '✅ Set' : '❌ Missing');
   console.log('Server URL: https://tfg-20ng.onrender.com');
+  console.log('WebSocket URL: wss://tfg-20ng.onrender.com/stream');
+  console.log('WSS Resolver: https://tfg-20ng.onrender.com/resolve-wss');
   console.log('========================================\n');
 });
