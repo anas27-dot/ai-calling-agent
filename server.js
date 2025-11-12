@@ -24,7 +24,8 @@ const sessions = new Map(); // CallSid → history
 // GET: Call starts → Greeting + Record
 app.get('/exotel/voicebot', (req, res) => {
   const timestamp = new Date().toISOString();
-  const callSid = req.query.CallSid || 'unknown';
+  // Try multiple possible CallSid sources
+  const callSid = req.query.CallSid || req.query.callSid || req.query.From || req.query.CallFrom || `call-${Date.now()}`;
   
   console.log('\n========== GET REQUEST ==========');
   console.log('Timestamp:', timestamp);
@@ -35,18 +36,27 @@ app.get('/exotel/voicebot', (req, res) => {
   console.log('Query Params:', JSON.stringify(req.query, null, 2));
   console.log('IP:', req.ip);
   
+  // Initialize session
+  sessions.set(callSid, []);
+  console.log('Session initialized for CallSid:', callSid);
+  
+  // Build callback URL for transcription
+  const host = req.get('host');
+  const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
+  
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say language="hi-IN" voice="Manvi">बोलिए...</Say>
-  <Record maxLength="30" transcriptionEnabled="true" />
+  <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" callbackUrl="${callbackUrl}" method="POST" />
 </Response>`;
 
+  console.log('Callback URL:', callbackUrl);
   console.log('Response XML:', xml);
   console.log('Response Status: 200');
   console.log('Response Content-Type: application/xml');
   console.log('========== GET RESPONSE SENT ==========\n');
 
-  res.set('Content-Type', 'application/xml').send(xml);
+  res.set('Content-Type', 'application/xml; charset=utf-8').send(xml);
 });
 
 // POST: Transcription received → AI reply
