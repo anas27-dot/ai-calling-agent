@@ -25,15 +25,20 @@ app.get('/exotel/voicebot', (req, res) => {
   const host = req.get('host');
   const callbackUrl = `https://${host}/exotel/voicebot?callSid=${callSid}`;
 
+  // Try simpler format for Voicebot compatibility
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say language="hi-IN" voice="Manvi">नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?</Say>
+  <Say language="hi-IN">नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?</Say>
   <Record maxLength="30" finishOnKey="#" transcriptionEnabled="true" callbackUrl="${callbackUrl}" method="POST" />
 </Response>`;
 
   console.log('STEP 2: Sending XML → Greeting + Start recording');
   console.log('Callback URL:', callbackUrl);
-  res.set('Content-Type', 'application/xml; charset=utf-8').send(xml);
+  console.log('Full XML:', xml);
+  
+  res.status(200);
+  res.set('Content-Type', 'application/xml; charset=utf-8');
+  res.send(xml);
 });
 
 // POST: Transcription received → AI reply
